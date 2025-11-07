@@ -30,9 +30,19 @@ function now() {
   return realNow + localOffset + drift * elapsed;
 }
 
+function logCurrentTime(tag = "") {
+  const t = now();
+  console.log(
+    `[time] ${tag} now_unix=${t.toFixed(3)} | iso=${new Date(t * 1000).toISOString()}`
+  );
+}
+
 function adjust(delta) {
   localOffset += delta;
-  console.log(`[clock] applied offset=${delta.toFixed(3)} → newOffset=${localOffset.toFixed(3)}`);
+  console.log(
+    `[clock] applied offset=${delta.toFixed(3)} → newOffset=${localOffset.toFixed(3)}`
+  );
+  logCurrentTime("after_adjust");
 }
 
 function main() {
@@ -44,7 +54,8 @@ function main() {
   sock.setEncoding("utf8");
 
   sock.on("data", (raw) => {
-    raw.trim()
+    raw
+      .trim()
       .split("\n")
       .forEach((line) => {
         if (!line) return;
@@ -53,7 +64,9 @@ function main() {
           if (msg.type === "TIME_REQUEST") {
             const t1 = now();
             sock.write(JSON.stringify({ type: "TIME_REPLY", t1 }) + "\n");
-            console.log(`[>] reply TIME_REPLY t1=${t1.toFixed(3)}`);
+
+            console.log(`[>] TIME_REPLY t1=${t1.toFixed(3)}`);
+            logCurrentTime("reply");
 
           } else if (msg.type === "ADJUST") {
             const off = msg.offset ?? 0;

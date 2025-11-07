@@ -21,6 +21,12 @@ const POLL_INTERVAL = argv.interval * 1000;
 
 let clients = {}; // { id: {socket, addr} }
 
+function formatTimestamp(ts) {
+  const date = new Date(ts * 1000); // detik → ms
+  return date.toISOString().replace("T", " ").slice(0, 19);
+}
+
+
 // Handle connected client
 function onClient(socket) {
   socket.setEncoding("utf8");
@@ -106,13 +112,13 @@ async function pollClients() {
   }
 
   const tServer = Date.now() / 1000;
-  console.log(`  server time: ${tServer.toFixed(3)}`);
+  console.log(`  server time: ${tServer.toFixed(3)} (${formatTimestamp(tServer)})`);
 
   // Build clock list
   const values = [tServer, ...Object.values(estimates).map((e) => e.est)];
   const mean = values.reduce((a, b) => a + b, 0) / values.length;
 
-  console.log(`  mean time: ${mean.toFixed(3)}`);
+  console.log(`  mean time: ${mean.toFixed(3)} (${formatTimestamp(mean)})`);
 
   // 2) Send adjustment
   for (const id of Object.keys(estimates)) {
