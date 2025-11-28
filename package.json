@@ -1,5 +1,6 @@
 {
   "dependencies": {
-    "yargs": "^18.0.0"
-  }
+    "yargs": "^16.0.0"
+  },
+  "type": "commonjs"
 }

@@ -156,8 +156,15 @@ function main() {
       });
   });
 
-  sock.on("close", () => console.log("[-] disconnected"));
-  sock.on("error", (e) => console.log("socket error", e));
+  sock.on("close", () => {
+    console.log("[-] disconnected");
+    process.exit(0);
+  });
+  
+  sock.on("error", (e) => {
+    console.log("socket error", e.code || e.message);
+    process.exit(1);
+  });
 }
 
 main();
