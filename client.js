@@ -1,170 +1,147 @@
 /**
- * Berkeley Algorithm Client
- * -------------------------
- * Run:
- * node client.js --id C1 --port 9000 --host 127.0.0.1 --offset 2 --drift 0.0001
- * * CATATAN PENTING: Untuk mengubah jam sistem (setSystemTime), 
- * script ini HARUS dijalankan sebagai ADMINISTRATOR di Windows.
+ * Berkeley Algorithm Client (Windows Local Time Version)
+ * ------------------------------------------------------
+ * Run (must be admin to set system time):
+ *   node client.js --host 127.0.0.1 --port 9000 --id clientA
  */
 
 const net = require("net");
-const yargs = require("yargs"); // Load yargs utama
-const { exec } = require('child_process'); // Digunakan untuk menjalankan perintah OS
-const os = require('os'); // Digunakan untuk cek platform OS
+const yargs = require("yargs/yargs");
+const { hideBin } = require("yargs/helpers");
+const { exec } = require("child_process");
 
-// --- FUNGSI PENGUBAH JAM SISTEM WINDOWS (DENGAN TANGGAL) ---
-
-/**
- * Menjalankan perintah DATE dan TIME di Windows untuk mengatur jam sistem.
- * @param {Date} newDate - Objek Date dengan waktu yang ingin disetel.
- */
-// [MODIFIED] FUNGSI PENGUBAH JAM SISTEM WINDOWS
-function setSystemTime(newDate) {
-    if (os.platform() !== 'win32') {
-        console.log(`[OS Hook] Perintah ubah jam sistem diabaikan (Bukan Windows).`);
-        return;
-    }
-
-    // --- 1. Dapatkan Waktu Lokal (WIB) ---
-    // Gunakan fungsi toLocaleTimeString() untuk mendapatkan waktu dalam format regional
-    // Pastikan zona waktu Node.js Anda benar (atau gunakan UTC + 7)
-    
-    // Asumsi: Waktu sudah dikonversi ke waktu lokal Anda (WIB) di targetDate.
-    // Kita gunakan format numerik untuk meminimalkan masalah regional:
-    
-    const month = (newDate.getMonth() + 1).toString().padStart(2, '0');
-    const day = newDate.getDate().toString().padStart(2, '0');
-    const year = newDate.getFullYear();
-    
-    // Menggunakan format yang paling umum diterima Windows: MM/DD/YYYY
-    const dateString = `${month}/${day}/${year}`; 
-
-    const hours = newDate.getHours().toString().padStart(2, '0');
-    const minutes = newDate.getMinutes().toString().padStart(2, '0');
-    const seconds = newDate.getSeconds().toString().padStart(2, '0');
-    const timeString = `${hours}:${minutes}:${seconds}`;
-
-    // --- 2. Perintah Pemaksa Eksekusi Windows (Paling Robust) ---
-    // Menggunakan cmd /c untuk memaksa eksekusi dan 'set' untuk menghindari prompt interaktif
-    
-    const command = `cmd /c date ${dateString} & cmd /c time ${timeString}`;
-
-    exec(command, (error, stdout, stderr) => {
-        if (error) {
-            console.error(`[ERROR OS] Gagal mengubah jam sistem. Error: ${error.message}`);
-            console.error(`[ERROR OS] Cek: Hak Admin (Sudo) dan format MM/DD/YYYY`);
-            return;
-        }
-        // Log ini menunjukkan perintah berhasil dieksekusi di OS
-        console.log(`[SUCCESS OS] Jam sistem diubah ke ${timeString} [Target: ${dateString}]`);
-    });
-}
-
-// --- ARGUMEN BARIS PERINTAH ---
-
-const argv = yargs(process.argv.slice(2))
-  .option("id", { type: "string", default: "client-" + Math.random().toFixed(4).slice(2) })
-  .option("host", { type: "string", default: "127.0.0.1" })
-  .option("port", { type: "number", default: 9000 })
-  .option("offset", { type: "number", default: 0.0 })
-  .option("drift", { type: "number", default: 0.0 })
+const argv = yargs(hideBin(process.argv))
+  .option("host", { default: "127.0.0.1", type: "string" })
+  .option("port", { default: 9000, type: "number" })
+  .option("id",   { default: "client-" + Math.floor(Math.random() * 1000), type: "string" })
   .help()
   .argv;
 
-const { id, host, port, offset, drift } = argv;
+const HOST = argv.host;
+const PORT = argv.port;
+const CLIENT_ID = argv.id;
 
-// --- JAM LOGIS & SIMULASI CLOCK SKEW ---
 
-// logical clock
-let baseTime = Date.now() / 1000;
-let localOffset = offset; // seconds
-
-function now() {
-  const realNow = Date.now() / 1000;
-  const elapsed = realNow - baseTime;
-  // Perhitungan jam logis (Waktu Nyata + Offset + Drift * Waktu Berlalu)
-  return realNow + localOffset + drift * elapsed;
+// ======================================================
+// HELPER: Format timestamp human-friendly
+// ======================================================
+function formatTimestamp(ts) {
+  const d = new Date(ts * 1000);
+  return d.toLocaleString(); // otomatis pakai zona waktu Windows lokal
 }
 
-function logCurrentTime(tag = "") {
-  const t = now();
-  console.log(
-    `[time] ${tag} now_unix=${t.toFixed(3)} | iso=${new Date(t * 1000).toISOString()}`
-  );
+
+// ======================================================
+// GET LOCAL WINDOWS TIME
+// ======================================================
+function getLocalSystemTime() {
+  return Date.now() / 1000; 
 }
 
-// --- FUNGSI ADJUST BARU (Mengubah Jam Sistem) ---
 
-function adjust(delta) {
-    // Hitung waktu sistem yang baru setelah penyesuaian (dalam detik)
-    const targetTimeUnix = now() + delta;
-    const targetDate = new Date(targetTimeUnix * 1000);
+// ======================================================
+// SET WINDOWS SYSTEM TIME
+// ======================================================
+function setLocalSystemTime(unixSeconds) {
+  const date = new Date(unixSeconds * 1000);
 
-    // [MODIFIKASI] Menghilangkan pengecekan if (Math.abs(delta) > 60)
-    // Sekarang akan selalu memanggil setSystemTime
-    
-    // Panggil fungsi OS untuk mengubah jam sistem secara nyata
-    setSystemTime(targetDate);
+  const yyyy = date.getFullYear();
+  const mm   = String(date.getMonth() + 1).padStart(2, "0");
+  const dd   = String(date.getDate()).padStart(2, "0");
+  const hh   = String(date.getHours()).padStart(2, "0");
+  const mi   = String(date.getMinutes()).padStart(2, "0");
+  const ss   = String(date.getSeconds()).padStart(2, "0");
 
-    // Catat penyesuaian di offset lokal: 
-    // Kita asumsikan jam sistem diubah, sehingga baseTime logis Node.js ini 
-    // sekarang juga harus disetel ulang berdasarkan jam sistem yang baru.
-    
-    // Setel ulang baseTime ke waktu nyata saat ini
-    baseTime = Date.now() / 1000; 
-    localOffset = 0; // Karena jam sistem sudah diubah, offset kita terhadap waktu nyata harusnya 0
+  const datetime = `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+  const cmd = `powershell -Command "Set-Date -Date '${datetime}'"`;
 
-    console.log(`[clock] REAL ADJUSTMENT: target time=${targetDate.toLocaleTimeString()}`);
-    
-    logCurrentTime("after_adjust");
-}
+  console.log(`🕒 Applying time adjustment → ${datetime}`);
 
-// --- KOMUNIKASI JARINGAN ---
-
-function main() {
-  const sock = net.connect(port, host, () => {
-    console.log(`[+] Connected to server ${host}:${port} as ${id}`);
-    sock.write(JSON.stringify({ id }) + "\n");
-  });
-
-  sock.setEncoding("utf8");
-
-  sock.on("data", (raw) => {
-    raw
-      .trim()
-      .split("\n")
-      .forEach((line) => {
-        if (!line) return;
-        try {
-          const msg = JSON.parse(line);
-          if (msg.type === "TIME_REQUEST") {
-            const t1 = now();
-            sock.write(JSON.stringify({ type: "TIME_REPLY", t1 }) + "\n");
-
-            console.log(`[>] TIME_REPLY t1=${t1.toFixed(3)}`);
-            logCurrentTime("reply");
-
-          } else if (msg.type === "ADJUST") {
-            const off = msg.offset ?? 0;
-            console.log(`[<] ADJUST offset=${off.toFixed(3)}`);
-            adjust(off); 
-
-          } else {
-            console.log("unknown msg", msg);
-          }
-        } catch {}
-      });
-  });
-
-  sock.on("close", () => {
-    console.log("[-] disconnected");
-    process.exit(0);
-  });
-  
-  sock.on("error", (e) => {
-    console.log("socket error", e.code || e.message);
-    process.exit(1);
+  exec(cmd, (err, stdout, stderr) => {
+    if (err) {
+      console.error("❌ Failed to update local Windows time:", stderr);
+    } else {
+      console.log(`✔ Windows time successfully updated.`);
+    }
   });
 }
 
-main();
+
+// ======================================================
+// CONNECT TO BERKELEY MASTER SERVER
+// ======================================================
+function connectToMaster() {
+  const socket = new net.Socket();
+  socket.setEncoding("utf8");
+
+  console.log(`🚀 Attempting connection to ${HOST}:${PORT} ...`);
+
+  socket.connect(PORT, HOST, () => {
+    console.log(`🎉 Connected to server as "${CLIENT_ID}"`);
+    socket.write(JSON.stringify({ id: CLIENT_ID }) + "\n");
+  });
+
+
+  // ======================================================
+  // SERVER MESSAGE HANDLER
+  // ======================================================
+  socket.on("data", (raw) => {
+    let msg;
+    try {
+      msg = JSON.parse(raw);
+    } catch {
+      console.log("⚠ Received invalid JSON data, ignoring.");
+      return;
+    }
+
+    // ------------------------
+    // HANDLE TIME REQUEST
+    // ------------------------
+    if (msg.type === "TIME_REQUEST") {
+      const t0 = msg.t0;
+      const t1 = getLocalSystemTime();
+
+      console.log(
+        `📨 TIME_REQUEST from server\n` +
+        `   - t0 (server send time): ${t0.toFixed(3)} (${formatTimestamp(t0)})\n` +
+        `   - t1 (client local time): ${t1.toFixed(3)} (${formatTimestamp(t1)})`
+      );
+
+      socket.write(JSON.stringify({ type: "TIME_REPLY", t1, t0 }) + "\n");
+
+      console.log(`↩ Sent TIME_REPLY back to server.`);
+
+    // ------------------------
+    // HANDLE TIME ADJUST
+    // ------------------------
+    } else if (msg.type === "ADJUST") {
+      const offset = msg.offset;
+      const current = getLocalSystemTime();
+      const newTime = current + offset;
+
+      console.log(
+        `⚙ ADJUST command received\n` +
+        `   - offset : ${offset.toFixed(3)} seconds\n` +
+        `   - before : ${formatTimestamp(current)}\n` +
+        `   - after  : ${formatTimestamp(newTime)}`
+      );
+
+      setLocalSystemTime(newTime);
+    }
+  });
+
+
+  // ======================================================
+  // CONNECTION CLOSED
+  // ======================================================
+  socket.on("close", () => {
+    console.log("🔌 Connection closed. Reconnecting in 3 seconds...");
+    setTimeout(connectToMaster, 3000);
+  });
+
+  socket.on("error", (err) => {
+    console.error("❗ Socket error:", err.message);
+  });
+}
+
+connectToMaster();
